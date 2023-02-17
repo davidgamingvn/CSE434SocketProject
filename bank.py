@@ -9,9 +9,11 @@ class Bank:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # IP/UDP
         sock.bind((Bank.IP, Bank.PORT))
 
+        self.sock =sock
+
     def run(self):
         while True:
-            data, addr = sock.recvfrom(1024)
+            data, addr = self.sock.recvfrom(1024)
             
             if data.startswith("open"):
                 self.open(data, addr)
