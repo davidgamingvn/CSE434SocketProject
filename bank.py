@@ -2,14 +2,14 @@ import socket
 
 class Bank:
     BUFFER_SIZE = 1024
-    IP = 0.0.0.0
+    IP = "0.0.0.0"
     PORT = 5000
 
     def __init__(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # IP/UDP
-        sock.bind((IP, PORT))
+        sock.bind((Bank.IP, Bank.PORT))
 
-    def run():
+    def run(self):
         while True:
             data, addr = sock.recvfrom(1024)
             
@@ -23,6 +23,7 @@ class Bank:
                 self.exit(data, addr)
             else:
                 # throw error or send error message
+                pass
 
 
     def open(data, addr):
