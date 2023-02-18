@@ -20,16 +20,19 @@ def read_csv_file(filepath):
     return data
 
 
+def read_cohort_number(filepath):
+    with open(filepath) as cohort_file:
+        return int(cohort_file.read())
+
+
 class Bank:
 
     CUSTOMER_FILE_NAME = "customers.csv"
+    COHORT_NUMBER_FILE_NAME = "cohort_number.txt"
 
     BUFFER_SIZE = 1024
     IP = "0.0.0.0"
     PORT = 5000
-
-    customers = []      # a list of customers
-    cohorts = []        # a list of all cohorts
 
     def __init__(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # IP/UDP
@@ -37,6 +40,7 @@ class Bank:
 
         self.sock = sock
         self.customers = read_csv_file(Bank.CUSTOMER_FILE_NAME)
+        self.cohort_number = read_cohort_number(Bank.COHORT_NUMBER_FILE_NAME)
 
     def run(self):
         while True:
@@ -55,7 +59,9 @@ class Bank:
                 else:
                     response = {"res": "FAILURE"}
             except Exception as e:
-                 response = {"res": "FAILURE"}
+                response = {"res": "FAILURE"}
+
+            # write to files
 
             self.sock.sendto(json.dumps(response).encode(), addr)
 
@@ -94,34 +100,87 @@ class Bank:
         if (n > len(Bank.customers)):
             return {"res": "FAILURE"}
 
-        new_group = [customer]  # new cohort group
         res = []
-        customers_without_group = set()
+        customers_without_cohort = []
 
-        for customer in self.customers:
-            name = customer[0]
-            for group in self.cohorts:
-                if name not in group:       # empty intersection
-                    customers_without_group.add(customer)
+        for c in self.customers:
+            name = c[0]
+            cohort = c[6]
 
-        picked_customers = random.choice(customers_without_group, n-1)
+            if cohort != 0:
+                if name == customer:
+                    break
+                customers_without_cohort.append(c)
 
-        for customer in picked_customers:
-            res.append(customer)
-            # add the name of the customer to the cohort group
-            new_group.append(customer[0])
+        if len(customers_without_cohort) < n:
+            return {"res": "FAILURE"}
 
-        self.cohorts.append(new_group)
+        picked_customers = random.choice(customers_without_cohort, n-1)
+
+        for c in picked_customers:
+            c[6] = self.cohort_number
+            self.cohort_number += 1
+            res.append(c)
+
         return {
             "res": "SUCCESS",
             "data": res
         }
 
     def delete_cohort(self, data, addr):
-        pass
+        success_response = {"res": "SUCCESS"}
+        failure_response = {"res": "FAILURE"}
+        tokens = data.split()
+
+        if len(tokens) != 2:
+            return failure_response
+
+        command, customer = tokens
+        has_group = False
+        customer_cohort = 0
+
+        for c in self.customers:
+            name = c[0]
+            cohort = c[6]
+
+            if name == customer and cohort != 0:
+                has_group = True
+                customer_cohort = cohort
+                break
+
+        if not has_group:
+            return failure_response
+
+        for c in self.customers:
+            cohort = c[6]
+
+            if cohort == customer_cohort:
+                c[6] = 0
+
+        return success_response
 
     def exit(self, data, addr):
-        pass
+        success_response = {"res": "SUCCESS"}
+        failure_response = {"res": "FAILURE"}
+
+        tokens = data.split()
+        command, customer = tokens
+        user_exists = False
+
+        if len(tokens) != 2:
+            return failure_response
+
+        for i, c in enumerate(self.customers):
+            name = c[0]
+
+            if name == customer:
+                user_exists = True
+                break
+
+        if user_exists:
+            return success_response
+        else:
+            return failure_response
 
 
 if __name__ == "__main__":
