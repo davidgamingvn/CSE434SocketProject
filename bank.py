@@ -76,8 +76,10 @@ class Bank:
             return {"res": "FAILURE"}
 
         # Add customer information to database
-        if (tuple(tokens) not in Bank.customers):
-            Bank.customers.append(tuple(tokens))
+        if (tokens not in Bank.customers):
+
+            tokens.append('0')
+            Bank.customers.append(tokens)
             return {"res": "SUCCESS"}
         else:
             return {"res": "FAILURE"}
