@@ -5,8 +5,8 @@ import csv
 import json
 import math
 
-
-def read_csv_file(filepath):
+## open a new csv file, acting as a database
+def read_csv_file(filepath): 
     data = []
 
     with open(filepath) as csv_file:
@@ -20,12 +20,13 @@ def read_csv_file(filepath):
                 line_count += 1
     return data
 
-
+## open a text file  to read current cohort number
 def read_cohort_number(filepath):
     with open(filepath) as cohort_file:
         return int(cohort_file.read())
 
 
+## write a list of customers information to the csv database
 def write_customers_file(li, filepath):
     with open(filepath, mode='w') as file:
         writer = csv.writer(file, delimiter=',',
@@ -36,7 +37,7 @@ def write_customers_file(li, filepath):
         for each in li:
             writer.writerow(each)
 
-
+## write the current cohort number
 def write_cohort_number(number, filepath):
     with open(filepath, 'w') as file:
         file.write(str(number))
@@ -47,6 +48,7 @@ class Bank:
     CUSTOMER_FILE_NAME = "customers.csv"
     COHORT_NUMBER_FILE_NAME = "cohort_number.txt"
 
+    ## assigned port ranges
     GROUP_NUMBER = 39
     PORT_START = math.ceil(GROUP_NUMBER / 2) * 1000 + 500
     PORT_END = math.ceil(GROUP_NUMBER / 2) * 1000 + 999
@@ -68,6 +70,8 @@ class Bank:
             data, addr = self.sock.recvfrom(1024)
             data = data.decode()
             response = None
+            
+            ## read commands received from the socket
             try:
                 if data.startswith("open"):
                     response = self.open(data, addr)
@@ -82,6 +86,7 @@ class Bank:
             except Exception as e:
                 response = {"res": "FAILURE"}
 
+            # if the response has a success status code, update relevant text files.
             if response['res'] == 'SUCCESS':
                 # write to files
                 write_customers_file(self.customers, Bank.CUSTOMER_FILE_NAME)
@@ -100,7 +105,7 @@ class Bank:
         server_port = tokens[3]
         client_port = tokens[4]
 
-        def validIP(address: str) -> bool:
+        def validIP(address: str) -> bool:  #check if address field in the command is in correct ipv4 format
             return True if type(ip_address(address)) is IPv4Address else False
 
         # if there are more than one customer in the same host, check if they are using different port number
@@ -108,6 +113,7 @@ class Bank:
         if (len(name) > 15 or (server_port == client_port) or not validIP(address)):
             return {"res": "FAILURE"}
 
+        # if the customer already exists in the database
         for c in self.customers:
             if name == c[0]:
                 return {"res": "FAILURE"}
@@ -115,7 +121,7 @@ class Bank:
         # Add customer information to database
         if (tokens not in self.customers):
 
-            tokens.append('0')
+            tokens.append('0')  # add a cohort number field to the end of the customer information
             self.customers.append(tokens)
             return {"res": "SUCCESS"}
         else:
@@ -135,31 +141,31 @@ class Bank:
             return {"res": "FAILURE"}
 
         res = []
-        customers_without_cohort = []
+        customers_without_cohort = []   # temporary array to store any customers that are not already in a cohort
 
         for c in self.customers:
             name = c[0]
             cohort = c[5]
 
-            if name == customer:
+            if name == customer:    # if the customer is in the database but already has a cohort
                 if int(cohort) != 0:
                     return {"res": "FAILURE"}
                 else:
                     res.append(c)
             else:
-                if int(cohort) == 0:
+                if int(cohort) == 0:    # if the customer is in the database and doesn't have a cohort
                     customers_without_cohort.append(c)
 
         if len(customers_without_cohort) < n - 1:
             return {"res": "FAILURE"}
 
-        picked_customers = random.choices(customers_without_cohort, k=n-1)
+        picked_customers = random.choices(customers_without_cohort, k=n-1)  # randomly choose a list of customers without cohorts
 
-        for c in picked_customers:
+        for c in picked_customers:  # append the picked customers to the new cohort
             res.append(c)
 
         for c in res:
-            c[5] = self.cohort_number
+            c[5] = self.cohort_number   # update the cohort number, incremented from the latest exisiting cohort number
         self.cohort_number += 1
 
         return {
