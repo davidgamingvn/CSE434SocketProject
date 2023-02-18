@@ -41,7 +41,7 @@ class Bank:
     def run(self):
         while True:
             data, addr = self.sock.recvfrom(1024)
-            data = str(data)
+            data = data.decode()
             response = None
 
             if data.startswith("open"):
