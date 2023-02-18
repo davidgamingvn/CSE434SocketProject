@@ -43,19 +43,21 @@ class Bank:
             data, addr = self.sock.recvfrom(1024)
             data = data.decode()
             response = None
+            try:
+                if data.startswith("open"):
+                    response = self.open(data, addr)
+                elif data.startswith("new-cohort"):
+                    response = self.new_cohort(data, addr)
+                elif data.startswith("delete-cohort"):
+                    response = self.delete_cohort(data, addr)
+                elif data.startswith("exit"):
+                    response = self.exit(data, addr)
+                else:
+                    response = {"res": "FAILURE"}
+            except Exception as e:
+                 response = {"res": "FAILURE"}
 
-            if data.startswith("open"):
-                resonse = self.open(data, addr)
-            elif data.startswith("new-cohort"):
-                response = self.new_cohort(data, addr)
-            elif data.startswith("delete-cohort"):
-                response = self.delete_cohort(data, addr)
-            elif data.startswith("exit"):
-                response = self.exit(data, addr)
-            else:
-                response = {"res": "FAILURE"}
-
-            self.socket.sendto(json.dumps(response), addr)
+            self.sock.sendto(json.dumps(response).encode(), addr)
 
     def open(self, data, addr):
         # tokenize the command string, excluding the first parameter
@@ -67,10 +69,10 @@ class Bank:
         server_port = tokens[3]
         client_port = tokens[4]
 
-        def validIP(address: str):
+        def validIP(address: str) -> bool:
             return True if type(ip_address(address)) is IPv4Address else False
 
-        if (len(name) > 15 or (server_port == client_port) or validIP(address)):
+        if (len(name) > 15 or (server_port == client_port) or not validIP(address)):
             return {"res": "FAILURE"}
 
         # Add customer information to database
