@@ -41,6 +41,7 @@ class Bank:
     def run(self):
         while True:
             data, addr = self.sock.recvfrom(1024)
+            data = str(data)
             response = None
 
             if data.startswith("open"):
@@ -61,6 +62,7 @@ class Bank:
         tokens = data.split(' ')[1:]
 
         name = tokens[0]
+        balance = tokens[1]
         address = tokens[2]
         server_port = tokens[3]
         client_port = tokens[4]
