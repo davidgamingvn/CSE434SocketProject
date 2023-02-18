@@ -29,7 +29,7 @@ def write_customers_file(li, filepath):
     with open(filepath, mode='w') as file:
         writer = csv.writer(file, delimiter=',',
                             quotechar='"', quoting=csv.QUOTE_MINIMAL)
-        writer.writerow(['#', 'Customer', 'Balance',
+        writer.writerow(['Customer', 'Balance',
                         'IPv4 Address', 'Port1', 'Port2', 'Cohort'])
 
         for each in li:
@@ -38,7 +38,7 @@ def write_customers_file(li, filepath):
 
 def write_cohort_number(number, filepath):
     with open(filepath, 'w') as file:
-        file.write(number)
+        file.write(str(number))
 
 
 class Bank:
@@ -77,10 +77,11 @@ class Bank:
             except Exception as e:
                 response = {"res": "FAILURE"}
 
-            # write to files
-            write_customers_file(self.customers, Bank.CUSTOMER_FILE_NAME)
-            write_cohort_number(self.cohort_number,
-                                Bank.COHORT_NUMBER_FILE_NAME)
+            if response['res'] == 'SUCCESS':
+                # write to files
+                write_customers_file(self.customers, Bank.CUSTOMER_FILE_NAME)
+                write_cohort_number(self.cohort_number,
+                                    Bank.COHORT_NUMBER_FILE_NAME)
 
             self.sock.sendto(json.dumps(response).encode(), addr)
 
@@ -97,14 +98,20 @@ class Bank:
         def validIP(address: str) -> bool:
             return True if type(ip_address(address)) is IPv4Address else False
 
+        # if there are more than one customer in the same host, check if they are using different port number
+
         if (len(name) > 15 or (server_port == client_port) or not validIP(address)):
             return {"res": "FAILURE"}
 
+        for c in self.customers:
+            if name == c[0]:
+                return {"res": "FAILURE"}
+
         # Add customer information to database
-        if (tokens not in Bank.customers):
+        if (tokens not in self.customers):
 
             tokens.append('0')
-            Bank.customers.append(tokens)
+            self.customers.append(tokens)
             return {"res": "SUCCESS"}
         else:
             return {"res": "FAILURE"}
@@ -114,9 +121,12 @@ class Bank:
 
         command = tokens[0]
         customer = tokens[1]
-        n = tokens[2]
+        n = int(tokens[2])
 
-        if (n > len(Bank.customers)):
+        if n < 2:
+            return {"res": "FAILURE"}
+
+        if (n > len(self.customers)):
             return {"res": "FAILURE"}
 
         res = []
@@ -124,22 +134,28 @@ class Bank:
 
         for c in self.customers:
             name = c[0]
-            cohort = c[6]
+            cohort = c[5]
 
-            if cohort != 0:
-                if name == customer:
-                    break
-                customers_without_cohort.append(c)
+            if name == customer:
+                if int(cohort) != 0:
+                    return {"res": "FAILURE"}
+                else:
+                    res.append(c)
+            else:
+                if int(cohort) == 0:
+                    customers_without_cohort.append(c)
 
-        if len(customers_without_cohort) < n:
+        if len(customers_without_cohort) < n - 1:
             return {"res": "FAILURE"}
 
-        picked_customers = random.choice(customers_without_cohort, n-1)
+        picked_customers = random.choices(customers_without_cohort, k=n-1)
 
         for c in picked_customers:
-            c[6] = self.cohort_number
-            self.cohort_number += 1
             res.append(c)
+
+        for c in res:
+            c[5] = self.cohort_number
+        self.cohort_number += 1
 
         return {
             "res": "SUCCESS",
@@ -160,7 +176,7 @@ class Bank:
 
         for c in self.customers:
             name = c[0]
-            cohort = c[6]
+            cohort = c[5]
 
             if name == customer and cohort != 0:
                 has_group = True
@@ -171,10 +187,10 @@ class Bank:
             return failure_response
 
         for c in self.customers:
-            cohort = c[6]
+            cohort = c[5]
 
             if cohort == customer_cohort:
-                c[6] = 0
+                c[5] = 0
 
         return success_response
 
@@ -185,6 +201,8 @@ class Bank:
         tokens = data.split()
         command, customer = tokens
         user_exists = False
+
+        self.delete_cohort(f"delete-cohort {customer}", addr)
 
         if len(tokens) != 2:
             return failure_response
@@ -197,6 +215,7 @@ class Bank:
                 break
 
         if user_exists:
+            self.customers.pop(i)
             return success_response
         else:
             return failure_response
