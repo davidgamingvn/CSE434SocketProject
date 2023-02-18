@@ -25,6 +25,22 @@ def read_cohort_number(filepath):
         return int(cohort_file.read())
 
 
+def write_customers_file(li, filepath):
+    with open(filepath, mode='w') as file:
+        writer = csv.writer(file, delimiter=',',
+                            quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        writer.writerow(['#', 'Customer', 'Balance',
+                        'IPv4 Address', 'Port1', 'Port2', 'Cohort'])
+
+        for each in li:
+            writer.writerow(each)
+
+
+def write_cohort_number(number, filepath):
+    with open(filepath, 'w') as file:
+        file.write(number)
+
+
 class Bank:
 
     CUSTOMER_FILE_NAME = "customers.csv"
@@ -62,6 +78,9 @@ class Bank:
                 response = {"res": "FAILURE"}
 
             # write to files
+            write_customers_file(self.customers, Bank.CUSTOMER_FILE_NAME)
+            write_cohort_number(self.cohort_number,
+                                Bank.COHORT_NUMBER_FILE_NAME)
 
             self.sock.sendto(json.dumps(response).encode(), addr)
 
