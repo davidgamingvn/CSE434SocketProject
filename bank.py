@@ -173,6 +173,16 @@ class Bank:
             "data": res
         }
 
+    # delete a cohort group that a member belongs to
+    # as the cohort gorup is deleted, other members who
+    # are in the gorup are affected
+    # params:
+    #   data: string type, command given by client
+    #         string format should be "delete-cohort <customer>"
+    #   addr: tuple of connected client's addr and port
+    # return:
+    #   on success: {"res": "SUCCESS"}
+    #   on failure: {"res": "FAILURE"}
     def delete_cohort(self, data, addr):
         success_response = {"res": "SUCCESS"}
         failure_response = {"res": "FAILURE"}
@@ -185,6 +195,8 @@ class Bank:
         has_group = False
         customer_cohort = 0
 
+        # find if the member exists and he/she is
+        # in cohort
         for c in self.customers:
             name = c[0]
             cohort = c[5]
@@ -194,9 +206,11 @@ class Bank:
                 customer_cohort = cohort
                 break
 
+        # member not exists or member not belongs to cohort
         if not has_group:
             return failure_response
 
+        # removes other members from the same cohort
         for c in self.customers:
             cohort = c[5]
 
@@ -205,6 +219,16 @@ class Bank:
 
         return success_response
 
+    # delete a member info from database
+    # if the member is already in cohort, this method delete
+    # the cohort first by using "delete_cohort" method
+    # params:
+    #       data: string type, command given by client
+    #             string format is "exit <customer>""
+    #       addr: tuple of connected client's addr and port
+    # return:
+    #   on success: {"res": "SUCCESS"}
+    #   on failure: {"res": "FAILURE"}
     def exit(self, data, addr):
         success_response = {"res": "SUCCESS"}
         failure_response = {"res": "FAILURE"}
@@ -218,6 +242,7 @@ class Bank:
         if len(tokens) != 2:
             return failure_response
 
+        # check if user exists
         for i, c in enumerate(self.customers):
             name = c[0]
 
