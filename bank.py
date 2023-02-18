@@ -3,6 +3,7 @@ import random
 from ipaddress import ip_address, IPv4Address
 import csv
 import json
+import math
 
 
 def read_csv_file(filepath):
@@ -46,9 +47,13 @@ class Bank:
     CUSTOMER_FILE_NAME = "customers.csv"
     COHORT_NUMBER_FILE_NAME = "cohort_number.txt"
 
+    GROUP_NUMBER = 39
+    PORT_START = math.ceil(GROUP_NUMBER / 2) * 1000 + 500
+    PORT_END = math.ceil(GROUP_NUMBER / 2) * 1000 + 999
+
     BUFFER_SIZE = 1024
     IP = "0.0.0.0"
-    PORT = 5000
+    PORT = PORT_START
 
     def __init__(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # IP/UDP
