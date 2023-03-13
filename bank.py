@@ -5,8 +5,10 @@ import csv
 import json
 import math
 
-## open a new csv file, acting as a database
-def read_csv_file(filepath): 
+# open a new csv file, acting as a database
+
+
+def read_csv_file(filepath):
     data = []
 
     with open(filepath) as csv_file:
@@ -20,24 +22,28 @@ def read_csv_file(filepath):
                 line_count += 1
     return data
 
-## open a text file  to read current cohort number
+# open a text file  to read current cohort number
+
+
 def read_cohort_number(filepath):
     with open(filepath) as cohort_file:
         return int(cohort_file.read())
 
 
-## write a list of customers information to the csv database
+# write a list of customers information to the csv database
 def write_customers_file(li, filepath):
-    with open(filepath, mode='w') as file:
+    with open(filepath, mode='w', newline='') as file:
         writer = csv.writer(file, delimiter=',',
                             quotechar='"', quoting=csv.QUOTE_MINIMAL)
         writer.writerow(['Customer', 'Balance',
-                        'IPv4 Address', 'Port1', 'Port2', 'Cohort'])
+                        'IPv4 Address', '`Port1`', 'Port2', 'Cohort'])
 
         for each in li:
             writer.writerow(each)
 
-## write the current cohort number
+# write the current cohort number
+
+
 def write_cohort_number(number, filepath):
     with open(filepath, 'w') as file:
         file.write(str(number))
@@ -48,7 +54,7 @@ class Bank:
     CUSTOMER_FILE_NAME = "customers.csv"
     COHORT_NUMBER_FILE_NAME = "cohort_number.txt"
 
-    ## assigned port ranges
+    # assigned port ranges
     GROUP_NUMBER = 39
     PORT_START = math.ceil(GROUP_NUMBER / 2) * 1000 + 500
     PORT_END = math.ceil(GROUP_NUMBER / 2) * 1000 + 999
@@ -70,8 +76,8 @@ class Bank:
             data, addr = self.sock.recvfrom(1024)
             data = data.decode()
             response = None
-            
-            ## read commands received from the socket
+
+            # read commands received from the socket
             try:
                 if data.startswith("open"):
                     response = self.open(data, addr)
@@ -81,6 +87,8 @@ class Bank:
                     response = self.delete_cohort(data, addr)
                 elif data.startswith("exit"):
                     response = self.exit(data, addr)
+                elif data.startswith("get"):
+                    response = self.get(data, addr)
                 else:
                     response = {"res": "FAILURE"}
             except Exception as e:
@@ -105,7 +113,8 @@ class Bank:
         server_port = tokens[3]
         client_port = tokens[4]
 
-        def validIP(address: str) -> bool:  #check if address field in the command is in correct ipv4 format
+        # check if address field in the command is in correct ipv4 format
+        def validIP(address: str) -> bool:
             return True if type(ip_address(address)) is IPv4Address else False
 
         # if there are more than one customer in the same host, check if they are using different port number
@@ -121,7 +130,8 @@ class Bank:
         # Add customer information to database
         if (tokens not in self.customers):
 
-            tokens.append('0')  # add a cohort number field to the end of the customer information
+            # add a cohort number field to the end of the customer information
+            tokens.append('0')
             self.customers.append(tokens)
             return {"res": "SUCCESS"}
         else:
@@ -141,7 +151,8 @@ class Bank:
             return {"res": "FAILURE"}
 
         res = []
-        customers_without_cohort = []   # temporary array to store any customers that are not already in a cohort
+        # temporary array to store any customers that are not already in a cohort
+        customers_without_cohort = []
 
         for c in self.customers:
             name = c[0]
@@ -159,13 +170,15 @@ class Bank:
         if len(customers_without_cohort) < n - 1:
             return {"res": "FAILURE"}
 
-        picked_customers = random.choices(customers_without_cohort, k=n-1)  # randomly choose a list of customers without cohorts
+        # randomly choose a list of customers without cohorts
+        picked_customers = random.choices(customers_without_cohort, k=n-1)
 
         for c in picked_customers:  # append the picked customers to the new cohort
             res.append(c)
 
         for c in res:
-            c[5] = self.cohort_number   # update the cohort number, incremented from the latest exisiting cohort number
+            # update the cohort number, incremented from the latest exisiting cohort number
+            c[5] = self.cohort_number
         self.cohort_number += 1
 
         return {
@@ -255,6 +268,60 @@ class Bank:
             return success_response
         else:
             return failure_response
+
+    def get(self, data, addr):
+
+        success_response = {
+            "res": "SUCCESS",
+            "data": {
+                "balance": -1,
+                "cohort": []
+            }
+        }
+        failure_response = {"res": "FAILURE"}
+
+        tokens = data.split()
+        command, customer = tokens
+        user_exists = False
+        user_cohort = 0
+
+        if len(tokens) != 2:
+            return failure_response
+
+        # check if user exists
+        for i, c in enumerate(self.customers):
+            name = c[0]
+            balance = c[1]
+            cohort = c[5]
+
+            if name == customer:
+                success_response['data']['name'] = name
+                success_response['data']['balance'] = balance
+                user_exists = True
+                user_cohort = cohort
+                break
+
+        if not user_exists:
+            return failure_response
+
+        for i, c in enumerate(self.customers):
+            # Customer,Balance,IPv4 Address,Port1,Port2,Cohort
+            name = c[0]
+            balance = c[1]
+            ipv4 = c[2]
+            port1 = c[3]
+            port2 = c[4]
+            cohort = c[5]
+
+            if cohort == user_cohort:
+                success_response['data']['cohort'].append({
+                    "name": name,
+                    "ipv4": ipv4,
+                    "port2": port2
+                })
+
+        return success_response
+
 
 
 if __name__ == "__main__":
