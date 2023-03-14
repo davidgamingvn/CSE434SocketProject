@@ -44,6 +44,8 @@ class Customer:
         return json.loads(byte_message)
 
     def get(self, data):
+        if self.initialized:
+            return {"res": "FAILURE", "reason": "account already initialized"}
         msg = customer.send(Customer.SERVER_ADDR, data)
         if msg['res'] == 'SUCCESS':
             self.name = msg['data']['name']
@@ -95,7 +97,7 @@ class Customer:
             sock.bind((ipv4, port2))
             
             while True:
-                data, addr = self.sock.recvfrom(Customer.BUFFER_SIZE)
+                data, addr = sock.recvfrom(Customer.BUFFER_SIZE)
                 data = data.decode()
                 response = None
 
@@ -115,9 +117,9 @@ class Customer:
         if not self.initialized:
             return {"res": "FAILURE", "reason": "not initialized"}
         
-        # extra_thread = threading.Thread(target=helper)
-        # extra_thread.start()
-        helper()
+        extra_thread = threading.Thread(target=helper)
+        extra_thread.start()
+        
 
     def transfer_recv(self, data, addr):
         tokens = data.split()
