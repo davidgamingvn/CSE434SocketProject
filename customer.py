@@ -49,6 +49,10 @@ class CheckpointAndRollback:
                     writer.writerow(
                         [str(each["name"]), str(-1), str(each['ipv4']), str(each['port2'])])
 
+
+    def rollback_from_file(self):
+        pass
+
     def initialize_labels(self, myName, cohort):
         labels = {}
         for each in cohort:
@@ -267,10 +271,12 @@ class CheckpointAndRollback:
 
     def rollback(self):
         self.rollback_id = str(uuid.uuid4())
+        self.has_prepare_rollback = True
         all_success = self.send_prepare_to_rollback()
 
         if not all_success:
             self.send_do_not_rollback()
+            self.has_prepare_rollback = False
             return {"res": "FAILURE", "reason": "send-prepare-to-rollback failed"}
 
         all_success = self.send_rollback()
@@ -294,12 +300,14 @@ class CheckpointAndRollback:
                 return {"res": "SUCCESS"}
 
         self.rollback_id = parent_rollback_id
-
+        
         value_without_offset = (
             self.labels[initializer].last_recv + self.labels[initializer].base - 1)
 
         if self.labels[initializer].first_sent == value_without_offset:
             self.willing_to_rollback = False
+
+        self.has_prepare_rollback = True
 
         if self.willing_to_rollback and (value_without_offset > last_label_sent and self.resume_execution):
             self.has_prepare_rollback = True
@@ -311,7 +319,9 @@ class CheckpointAndRollback:
             else:
                 return {"res": "FAILURE", "reason": "inside recv_prepare_to_rollback(): send_prepare_to_rollback() failed"}
 
-        return {"res": "FAILURE", "reason": "inside recv_prepare_to_rollback(): at least one of conditions is false"}
+        #TODO: send rollback information, regardless of condition
+        
+        return {"res": "SUCCESS"}
 
     def recv_rollback(self, data):
         tokens = data.split()
@@ -327,6 +337,7 @@ class CheckpointAndRollback:
 
         self.permanent_rollback = True
         self.has_prepare_rollback = False
+        self.executed_make_permanent_rollback = True
         all_success = self.send_rollback()
         if all_success:
             # TODO: get data from checkpoint
@@ -358,11 +369,10 @@ class CheckpointAndRollback:
 
 class Label:
     def __init__(self) -> None:
-        self.base = None
+        self.base = 1
         self.first_sent = 0
         self.last_sent = 0
-        self.last_recv = sys.maxsize
-
+        self.last_recv = 0
 
 class Customer:
 
@@ -508,7 +518,7 @@ class Customer:
                     elif data.startswith("prepare-to-rollback"):
                         response = self.chk_rollback.recv_prepare_to_rollback(
                             data)
-                    elif data.startswith("rollback"):
+                    elif data.startswith("send-rollback"):
                         response = self.chk_rollback.recv_rollback(
                             data)
                     elif data.startswith("do-not-rolllback"):
