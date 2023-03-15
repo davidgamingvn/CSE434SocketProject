@@ -4,8 +4,11 @@ import json
 import threading
 from threading import Lock
 import uuid
+import csv
 
 class CheckpointAndRollback:
+    CHECKPOINT_FILE_NAME = "checkpoint.csv"
+
     def __init__(self, customer) -> None:
         self.labels = self.initialize_labels(customer.name, customer.cohort)
         self.check_cohort = None
@@ -15,9 +18,29 @@ class CheckpointAndRollback:
 
         self.has_tentative_checkpoint = False
         self.permanent_checkpoint = False
+        self.executed_make_permanent_checkpoint = False
         
         #ready_to_roll = True
         #willing_to_rollback = True
+
+        
+
+    def write_checkpoint_to_file(self):
+        with open(f"{self.myName}_"+ self.CHECKPOINT_FILE_NAME, mode='w', newline='') as file:
+            writer = csv.writer(file, delimiter=',',
+                                quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            writer.writerow(['Customer', 'Balance', 'IPv4 Address', 'Port2'])
+
+            # write first row that is owner of this client
+            for each in self.customer.cohort:
+                if each['name'] == self.myName:
+                    writer.writerow([self.myName, str(self.customer.balance) , str(each['ipv4']), str(each['port2'])])
+                    break
+
+            # for the rest of the file, write data of customers in the same cohort
+            for each in self.customer.cohort:
+                if each['name'] != self.myName:
+                    writer.writerow([str(each["name"]), str(-1) , str(each['ipv4']), str(each['port2'])])
 
     def initialize_labels(self, myName, cohort):
         labels = {}
@@ -28,13 +51,13 @@ class CheckpointAndRollback:
         return labels
     
 
-    def initialize_check_cohort(self):
+    def update_check_cohort(self):
         check_cohort = {}
 
         for other_client_name, label in self.labels.items():
             if label.last_recv > 0:
                 check_cohort[other_client_name] = label
-        return check_cohort
+        self.check_cohort = check_cohort
 
     def get_ipv4_and_port(self, other_client_name):
         for each in self.customer.cohort:
@@ -46,8 +69,9 @@ class CheckpointAndRollback:
 
     def send_take_a_tentative_checkpoint(self):
         cmd = "take-a-tentative-checkpoint"
-
         answers = []
+
+        self.update_check_cohort()
         for other_client_name in self.check_cohort:
             ipv4_port2 = self.get_ipv4_and_port(other_client_name)
             last_label_recvd = self.labels[other_client_name].last_recv
@@ -57,12 +81,16 @@ class CheckpointAndRollback:
                 answers.append(True)
             else:
                 answers.append(False)
-
+        
         return all(answers)
 
     def send_make_tentative_check_permanent(self):
         cmd = "make-tentative-checkpoint-permanent"
         answers = []
+
+        self.executed_make_permanent_checkpoint = True
+
+        self.update_check_cohort()
         for other_client_name in self.check_cohort:
             ipv4_port2 = self.get_ipv4_and_port(other_client_name)
             
@@ -78,6 +106,8 @@ class CheckpointAndRollback:
     def send_undo_tentative_checkpoint(self):
         cmd = "undo-tentative-checkpoint"
         answers = []
+
+        self.update_check_cohort()
         for other_client_name in self.check_cohort:
             ipv4_port2 = self.get_ipv4_and_port(other_client_name)
             
@@ -91,15 +121,22 @@ class CheckpointAndRollback:
         return all(answers)
 
     def checkpoint(self):
-        self.check_cohort = self.initialize_check_cohort()
+        self.update_check_cohort()
         self.checkpoint_id = str(uuid.uuid4())
         self.has_tentative_checkpoint = True
         all_success = self.send_take_a_tentative_checkpoint()
         
-        if all_success:
-            self.send_make_tentative_check_permanent()
-        else:
+        if not all_success:
             self.send_undo_tentative_checkpoint()
+            return {"res": "FAILURE", "reason": "take a tentative checkpoint failed"}
+
+        all_success = self.send_make_tentative_check_permanent()
+        if all_success:
+            self.write_checkpoint_to_file()
+            return {"res": "SUCCESS"}
+        else:
+            return {"res": "FAILURE", "reason": "make tentative checkpoint permanent failed"}
+        
 
     def recv_take_a_tentative_checkpoint(self, data):
         tokens = data.split()
@@ -113,11 +150,14 @@ class CheckpointAndRollback:
                 return {"res": "FAILURE", "reason": "different checkpoint id"}
             else:
                 return {"res": "SUCCESS"}
+        self.checkpoint_id = parent_checkpoint_id
 
-        if self.labels[initializer].first_sent != last_label_rcvd:
+        value_without_offset = (last_label_rcvd + self.labels[initializer].base - 1)
+
+        if self.labels[initializer].first_sent != value_without_offset:
             self.willing_to_checkpoint = False
 
-        if self.willing_to_checkpoint and (last_label_rcvd >= self.labels[initializer].first_sent > 0):
+        if self.willing_to_checkpoint and (value_without_offset >= self.labels[initializer].first_sent > 0):
             self.has_tentative_checkpoint = True
             all_success = self.send_take_a_tentative_checkpoint()
             if all_success:
@@ -125,6 +165,8 @@ class CheckpointAndRollback:
             else:
                 return {"res": "FAILURE", "reason": "members of checkpoint cohort not willing to checkpoint"} 
         
+        return {"res": "FAILURE", "reason": "members of checkpoint cohort not willing to checkpoint"}
+
     def recv_make_tentative_checkpoint_permanent(self, data):
         tokens = data.split()
         command = tokens[0]
@@ -134,11 +176,15 @@ class CheckpointAndRollback:
             return {"res": "FAILURE", "reason": "client does not have tentative checkpoint"}
         if parent_checkpoint_id != self.checkpoint_id:
             return {"res": "FAILURE", "reason": "different checkpoint id"}
-        
+        if self.executed_make_permanent_checkpoint == True:
+            return {"res": "SUCCESS"}
+
         self.permanent_checkpoint = True
         self.has_tentative_checkpoint = False
         all_success = self.send_make_tentative_check_permanent()
         if all_success:
+            self.write_checkpoint_to_file()
+            self.customer.chk_rollback = CheckpointAndRollback(self.customer)
             return {"res": "SUCCESS"}
         else:
             return {"res": "FAILURE", "reason": "members of checkpoint cohort not willing to make tentative checkpoint permanent"} 
@@ -164,6 +210,7 @@ class CheckpointAndRollback:
 
 class Label:
     def __init__(self) -> None:
+        self.base = None
         self.first_sent = 0
         self.last_sent = 0
         self.last_recv = 0
@@ -214,6 +261,7 @@ class Customer:
             self.cohort = msg['data']['cohort']
             self.chk_rollback = CheckpointAndRollback(self)
 
+            # todo: need to initialize this part after checkpoint?
             for each in self.cohort:
                 each["port2"] = int(each["port2"])
                 if each['name'] != self.name:
@@ -246,6 +294,9 @@ class Customer:
                 if msg["res"] == "FAILURE":
                     return msg
 
+                if self.chk_rollback.labels[recipient].base is None:
+                    self.chk_rollback.labels[recipient].base = label
+
                 self.chk_rollback.labels[recipient].first_sent = label
                 self.chk_rollback.labels[recipient].last_sent = label
 
@@ -256,16 +307,15 @@ class Customer:
                         self.deposit(amount)
                     else:
                         return msg
+                else:
+                    return {"res": "SUCCESS", "emulate lost transfer": "True"}
 
         return {"res": "FAILURE", "reason": "recipient not found"}
 
     def checkpoint(self):
-        if self.chk_rollback and self.chk_rollback.permanent_checkpoint == True:
-            return {"res": "FAILURE", "reason": "there is already running checkpoint"}
-
-        
         msg = self.chk_rollback.checkpoint()
-        self.chk_rollback = CheckpointAndRollback(self)
+        if msg["res"] == "SUCCESS":
+            self.chk_rollback = CheckpointAndRollback(self)
         return msg
 
     def listen_to_cohort(self):
@@ -292,11 +342,11 @@ class Customer:
                     if data.startswith("transfer"):
                         response = self.transfer_recv(data, addr)
                     elif data.startswith("take-a-tentative-checkpoint"):
-                        self.chk_rollback.recv_take_a_tentative_checkpoint(data)
+                        response = self.chk_rollback.recv_take_a_tentative_checkpoint(data)
                     elif data.startswith("make-tentative-checkpoint-permanent"):
-                        self.chk_rollback.recv_make_tentative_checkpoint_permanent(data)
+                        response = self.chk_rollback.recv_make_tentative_checkpoint_permanent(data)
                     elif data.startswith("undo-tentative-checkpoint"):
-                        self.chk_rollback.recv_undo_tentative_checkpoint(data)
+                        response = self.chk_rollback.recv_undo_tentative_checkpoint(data)
                     else:
                         response = {"res": "FAILURE"}
                 except Exception as e:
