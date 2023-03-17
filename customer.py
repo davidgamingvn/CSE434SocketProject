@@ -24,7 +24,7 @@ class CheckpointAndRollback:
 
         self.resume_execution = True
         self.willing_to_rollback = True
-        self.roll_cohort = self.labels
+        self.roll_cohort = None
 
         self.has_prepare_rollback = False
         self.permanent_rollback = False
@@ -49,10 +49,16 @@ class CheckpointAndRollback:
                     writer.writerow(
                         [str(each["name"]), str(-1), str(each['ipv4']), str(each['port2'])])
 
-
     def rollback_from_file(self):
-        pass
-
+        with open(f"{self.myName}_" + self.CHECKPOINT_FILE_NAME) as file:
+            csv_reader = csv.reader(file, delimiter=",")
+            for i, row in enumerate(csv_reader):
+                if i == 0:
+                    continue
+                checkpoint_balance = float(row[1])
+                self.customer.balance = checkpoint_balance
+                break
+    
     def initialize_labels(self, myName, cohort):
         labels = {}
         for each in cohort:
@@ -68,6 +74,14 @@ class CheckpointAndRollback:
             if label.last_recv > 0:
                 check_cohort[other_client_name] = label
         self.check_cohort = check_cohort
+
+    def update_rollback_cohort(self):
+        roll_cohort = {}
+
+        for other_client_name, label in self.labels.items():
+            if label.last_recv > 0 or label.last_sent > 0:
+                roll_cohort[other_client_name] = label
+        self.roll_cohort = roll_cohort
 
     def get_ipv4_and_port(self, other_client_name):
         for each in self.customer.cohort:
@@ -222,6 +236,7 @@ class CheckpointAndRollback:
         cmd = "prepare-to-rollback"
         answers = []
 
+        self.update_rollback_cohort()
         for other_client_name in self.roll_cohort:
             ipv4_port2 = self.get_ipv4_and_port(other_client_name)
             last_label_sent = self.labels[other_client_name].last_sent
@@ -241,6 +256,7 @@ class CheckpointAndRollback:
 
         self.executed_make_permanent_rollback = True
 
+        self.update_rollback_cohort()
         for other_client_name in self.roll_cohort:
             ipv4_port2 = self.get_ipv4_and_port(other_client_name)
 
@@ -257,6 +273,7 @@ class CheckpointAndRollback:
         cmd = "do-not-rollback"
         answers = []
 
+        self.update_check_cohort()
         for other_client_name in self.roll_cohort:
             ipv4_port2 = self.get_ipv4_and_port(other_client_name)
 
@@ -281,7 +298,7 @@ class CheckpointAndRollback:
 
         all_success = self.send_rollback()
         if all_success:
-            # todo: restore instance from checkpoint file
+            self.rollback_from_file()
             return {"res": "SUCCESS"}
         else:
             return {"res": "FAILURE", "reason": "send-rollback failed"}
@@ -340,8 +357,7 @@ class CheckpointAndRollback:
         self.executed_make_permanent_rollback = True
         all_success = self.send_rollback()
         if all_success:
-            # TODO: get data from checkpoint
-            # self.write_checkpoint_to_file()
+            self.rollback_from_file()
             self.customer.chk_rollback = CheckpointAndRollback(self.customer)
             return {"res": "SUCCESS"}
         else:
@@ -384,8 +400,7 @@ class Customer:
     BUFFER_SIZE = 1024
 
     PORT = PORT_START
-    # SERVER_ADDR = ("34.125.218.27", PORT)   # the server's address
-    SERVER_ADDR = ("127.0.0.1", PORT)
+    SERVER_ADDR = ("34.125.18.167", PORT)   # the server's address
 
     def __init__(self) -> None:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)  # IP/UDP
@@ -480,6 +495,7 @@ class Customer:
     def rollback(self):
         msg = self.chk_rollback.rollback()
         if msg["res"] == "SUCCESS":
+            
             self.chk_rollback = CheckpointAndRollback(self)
         return msg
 
@@ -576,6 +592,10 @@ class Customer:
 
         return {"res": "SUCCESS", "balance": self.balance}
 
+    def print_balance(self):
+        if not self.initialized:
+            return {"res": "FAILURE", "reason": "not initialized"}
+        return ("name: " + self.name + "     balance: " + str(self.balance))
 
 if __name__ == "__main__":
     customer = Customer()
@@ -586,6 +606,7 @@ if __name__ == "__main__":
         # iniate threads for peer to peer communication
         if command.startswith("get"):
             msg = customer.get(command)
+            customer.listen_to_cohort()
         elif command.startswith("listen-to-cohort"):
             customer.listen_to_cohort()
         elif command.startswith("deposit"):
@@ -604,6 +625,8 @@ if __name__ == "__main__":
             msg = customer.checkpoint()
         elif command.startswith("rollback"):
             msg = customer.rollback()
+        elif command.startswith("print-balance"):
+            msg = customer.print_balance()
         else:
             msg = customer.send(Customer.SERVER_ADDR, command)
 
